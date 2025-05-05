@@ -1,0 +1,49 @@
+{
+    "name":"Snake Game",
+    "short_name":"Snake Game",
+    "description":"A simple snake game with an Artificial Intelligence that can play the game.",
+    "icons":[
+        {
+            "src":"icons/icon-192.png",
+            "type":"image/png",
+            "sizes":"192x192"
+        },
+        {
+            "src":"icons/icon-512.png",
+            "type":"image/png",
+            "sizes":"512x512"
+        },
+        {
+            "src":"icons/icon-192-maskable.png",
+            "type":"image/png",
+            "sizes":"192x192",
+            "purpose":"maskable"
+        },{
+            "src":"icons/icon-512-maskable.png",
+            "type":"image/png",
+            "sizes":"512x512",
+            "purpose":"maskable"
+        }
+    ],
+    "screenshots":[
+        {
+            "src":"screenshots/screenshot_start_human.png",
+            "type":"image/png",
+            "sizes":"1080x1920"
+        },
+        {
+            "src":"screenshots/screenshot_start_AI.png",
+            "type":"image/png",
+            "sizes":"1080x1920"
+        },{
+            "src":"screenshots/screenshot_game_play.png",
+            "type":"image/png",
+            "sizes":"1080x1920"
+        }
+
+    ],
+    "shortcuts":[],
+    "start_url":"..",
+    "display":"standalone",
+    "scope":"/"
+}

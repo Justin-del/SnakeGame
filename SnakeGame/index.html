@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-W1BG1B1NZX"></script>
+    <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-W1BG1B1NZX');
+    </script>
+    <meta name="google-site-verification" content="3MNYIvmSR5rDiTJlsGQlIHtQvy3BeDPUeoz-oh_Eww4" />
+    <link rel="manifest" href="./assets/manifest.webmanifest">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A simple snake game with an Artificial Intelligence that can play the game.">
+    <meta name="keywords" content="Snake Game, artificial intelligence">
+    <title>Snake Game</title>
+    <link rel="icon" type="image/x-icon" href="/assets/icons/icon-192.webp">
+    <style>
+        *{
+            font-family:sans-serif;
+            overscroll-behavior:none;
+        }
+
+        body{
+            width:80vw;
+            height:80vh;
+            max-width:350px;
+            margin-left:auto;
+            margin-right:auto;
+            position:relative;
+            overflow:auto;
+        }
+
+        canvas{
+            height:80vh;
+            max-height:350px;
+            margin-left:auto;
+            margin-right:auto;
+            margin-bottom:1rem;
+            display:block;
+            background-color:white;
+        }
+
+        img{
+            display:none;
+        }
+
+        .game-over-text-container, .start-button, .pause-menu{
+            display:none;
+            position:absolute;
+            z-index:2;
+            top:0;
+            margin-left:auto;
+            margin-right:auto;
+            width:80vw;
+            height:80vh;
+            max-width:350px;
+            max-height:350px;
+
+            &>div{
+                position:absolute;
+                top:50%;
+                left:50%;
+                transform:translateX(-50%) translateY(-50%);
+
+                & button{
+                    display:block;
+                    margin-top:1rem;
+                }
+            }
+
+        }
+
+        .start-button>div{
+            width:80%;
+        }
+
+
+        .two-column-grid{
+            display:grid;
+            grid-template-columns: min-content min-content;
+            gap:1rem;
+        }
+
+        .options{
+            display:grid;
+        }
+
+        select{
+            padding:0.25rem;
+        }
+
+        .counter{
+            display:grid;
+            grid-template-columns:auto auto auto;
+            gap:1rem;
+        }
+
+        .install-button{
+            display:none;
+            margin-top:1rem;
+        }
+
+    </style>
+</head>
+<body>
+    <script defer src="./touch.js"></script>
+
+    <script defer>
+        let installPrompt = null;
+        window.addEventListener("beforeinstallprompt", (event)=>{
+            event.preventDefault();
+            installPrompt=event;
+            let install_button = document.querySelector(".install-button")
+            install_button.style.display="block";
+
+            install_button.addEventListener("click", async()=>{
+                if (!installPrompt){
+                    return;
+                }
+
+                await installPrompt.prompt();
+                installPrompt = null;
+                install_button.style.display="none";
+            })
+        })
+
+        try{
+            navigator.wakeLock.request();
+        } catch(error){
+
+        }
+
+        if ("serviceWorker" in navigator){
+            navigator.serviceWorker.register("./service-worker.js");
+        }
+
+        let requestAnimationFrameID = null;
+
+        //mode can either be classic  or 'with earthquakes'.
+        let mode = "classic";
+        //player can be human or AI.
+        let player = "human";
+
+        let numberOfRows = 0;
+        let numberOfColumns = 0;
+        
+        let speed = 9;
+        const speed_step = 3;
+        const minimumNumberOfSnakeParts = 3;
+
+        let whenThePreviousFrameRendered = 0;
+
+        const initialCoordinatesForEachPartOfTheSnake = [[1,1], [2,1], [3,1]]
+        const initialDirectionOfEachPartOfTheSnake = [[1,0], [1,0], [1,0]]
+        let turns = new Map() // turns is a map where the key is the coordinate of the turn and the value is the direction of the turn.
+
+        let coordinatesForEachPartOfTheSnake = [...initialCoordinatesForEachPartOfTheSnake]
+        let directionOfEachPartOfTheSnake = [...initialDirectionOfEachPartOfTheSnake]  
+
+        const sizeOfEachGridInPixels = 25;
+        let canvas;
+        let ctx;
+
+        let xCoordinateOfApple = 0;
+        let yCoordinateOfApple = 0;
+
+        const maximumNumberOfShakesInAnEarthquake = 6;
+        let numberOfShakesOccured = 0;
+        let isEarthquakeOccuring = false;
+        let timeoutIDForEarthquake = null;
+
+        let isGameLooping = false;
+        let isGamePaused = false;
+
+        let counter = document.querySelector(".count");
+
+        const key_code_to_direction_map = new Map([[37,"left"],[38,"up"],[39,"right"],[40,"down"]])
+        const direction_to_opposite_direction_map = new Map([["left","right"],["down","up"],["right","left"],["up","down"]])
+        let user_input_queue = []
+
+        let start_button;
+        let start_message;
+        let pause_menu;
+        let score_element;
+
+        let images = new Map(); //images is a map where the key is the name of the image and the value is the canvas of the image.
+
+        function load_images(){
+            const id_of_each_image = ["tail_up","tail_down","tail_left","tail_right", "body_bottomleft", "body_bottomright", "body_horizontal", "body_topleft", "body_topright", "body_vertical", "head_left", "head_right", "head_up", "head_down", "apple" ]
+
+            id_of_each_image.forEach(id=>{
+                if (images.get(id)!==undefined){
+                    return;
+                }
+                const image = document.getElementById(id);
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(image, 0, 0, sizeOfEachGridInPixels, sizeOfEachGridInPixels)
+                images.set(id, canvas);
+            })
+        }
+
+        function init(){
+            load_images();
+
+            start_button = document.querySelector(".start-button");
+            start_message = document.querySelector(".start-message");
+            pause_menu  = document.querySelector(".pause-menu");
+            score_element = document.querySelector(".score-element");
+
+            user_input_queue=[]
+            isGameLooping = false;
+            isGamePaused = false;
+            
+            document.querySelector(".game-over-text-container").style.display = "none"
+            document.querySelector(".score").textContent = "0"
+            counter = document.querySelector(".count");
+
+            coordinatesForEachPartOfTheSnake = [...initialCoordinatesForEachPartOfTheSnake]
+            directionOfEachPartOfTheSnake = [...initialDirectionOfEachPartOfTheSnake]
+            turns.clear();
+
+            numberOfShakesOccured = 0;
+            isEarthquakeOccuring = false;
+            if (timeoutIDForEarthquake) window.clearTimeout(timeoutIDForEarthquake)
+            timeoutIDForEarthquake = null;
+
+            canvas = document.querySelector("canvas");
+
+
+            window.onkeydown = (event)=>{
+                event.preventDefault();
+                handleKeys(event);
+            }
+
+            window.addEventListener("swipe",handleSwipe, false)
+
+            ctx = canvas.getContext("2d");
+            setWidthAndHeightOfCanvas();
+            generateRandomCoordinatesForApple();
+
+            counter.textContent = Math.floor(speed/speed_step)+"";
+            main();
+        }
+
+
+        function setWidthAndHeightOfCanvas(){
+            canvas.width = Math.min(0.8*window.screen.availWidth, 350)
+            canvas.height = Math.min(0.8*window.screen.availHeight, 350)
+
+            numberOfRows = Math.floor(canvas.height/ sizeOfEachGridInPixels);
+            numberOfColumns = Math.floor(canvas.width / sizeOfEachGridInPixels);
+        }
+
+        function drawGrid(){
+            if (canvas.getContext){
+                if (canvas.offScreenCanvas){
+                    ctx.drawImage(canvas.offScreenCanvas,0,0);
+                    return;
+                }
+
+
+                canvas.offScreenCanvas = document.createElement("canvas");
+                canvas.offScreenCanvas.width = canvas.width;
+                canvas.offScreenCanvas.height = canvas.height;
+
+                const offScreenCanvasCtx = canvas.offScreenCanvas.getContext("2d");
+
+                const numberOfGridsInARow = Math.floor(canvas.width / sizeOfEachGridInPixels);
+                const numberOfGridsInAColumn = Math.floor(canvas.height / sizeOfEachGridInPixels);
+
+
+                let x = 0;
+                let y = 0;
+
+
+                while (y< numberOfGridsInAColumn){
+                    if ((x+y)%2 === 0){
+                        offScreenCanvasCtx.fillStyle="lightgreen";
+                    } else {
+                        offScreenCanvasCtx.fillStyle = "darkgreen";
+                    }
+
+                    offScreenCanvasCtx.fillRect(x*sizeOfEachGridInPixels,y*sizeOfEachGridInPixels, sizeOfEachGridInPixels, sizeOfEachGridInPixels)
+
+                    x+=1;
+
+                    if (x === numberOfGridsInARow){
+                        x = 0
+                        y += 1;
+                    }
+
+                }
+            }
+        }
+
+        function drawHead(){
+            const directionOfHead = directionOfEachPartOfTheSnake[directionOfEachPartOfTheSnake.length - 1];
+            const coordinateOfHead = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1];
+
+            const [xDirectionOfHead, yDirectionOfHead] = directionOfHead;
+            let [xCoordinateOfHead , yCoordinateOfHead] = coordinateOfHead;
+            let idOfHeadGraphic = ""
+
+            if (xDirectionOfHead === 1){
+                idOfHeadGraphic = "head_right"
+            } else if (xDirectionOfHead === -1){
+                idOfHeadGraphic= "head_left"
+            } else if (yDirectionOfHead === 1){
+                idOfHeadGraphic = "head_down"
+            } else if (yDirectionOfHead === -1){
+                idOfHeadGraphic = "head_up"
+            }
+
+            ctx.drawImage(images.get(idOfHeadGraphic), xCoordinateOfHead*sizeOfEachGridInPixels, yCoordinateOfHead*sizeOfEachGridInPixels)
+        }
+
+        function drawTail(){
+            const directionOfTail = directionOfEachPartOfTheSnake[1];
+            const coordinateOfTail = coordinatesForEachPartOfTheSnake[0];
+
+            const  [xDirectionOfTail, yDirectionOfTail] = directionOfTail;
+            let [xCoordinateOfTail , yCoordinateOfTail] = coordinateOfTail;
+
+            let idOfTailGraphic = ""
+
+            if (xDirectionOfTail === 1){
+                idOfTailGraphic = "tail_left"
+            } else if (xDirectionOfTail === -1){
+                idOfTailGraphic = "tail_right"
+            } else if (yDirectionOfTail === 1){
+                  idOfTailGraphic = "tail_up"
+            } else if (yDirectionOfTail === -1){
+                idOfTailGraphic = "tail_down"
+            }
+
+            ctx.drawImage(images.get(idOfTailGraphic), xCoordinateOfTail*sizeOfEachGridInPixels, yCoordinateOfTail*sizeOfEachGridInPixels);
+
+        }
+
+        function drawBody(){
+            for (let i = coordinatesForEachPartOfTheSnake.length - 2; i>=1; i--){
+
+                let coordinateOfTheCurrentPartOfTheSnake = coordinatesForEachPartOfTheSnake[i] ;
+                let [xCoordinateOfTheCurrentPartOfTheSnake, yCoordinateOfTheCurrentPartOfTheSnake] = coordinateOfTheCurrentPartOfTheSnake;
+
+                let directionOfTheCurrentPartOfTheSnake = directionOfEachPartOfTheSnake[i];
+                let [xDirectionOfTheCurrentPartOfTheSnake, yDirectionOfTheCurrentPartOfTheSnake] = directionOfTheCurrentPartOfTheSnake;
+
+                let directionOfTheNextPartOfTheSnake = directionOfEachPartOfTheSnake[i+1];
+
+                let [xDirectionOfTheNextPartOfTheSnake, yDirectionOfTheNextPartOfTheSnake] = directionOfTheNextPartOfTheSnake;
+
+                let idOfBodyGraphic = ""
+
+                if (yDirectionOfTheCurrentPartOfTheSnake === -1 && yDirectionOfTheNextPartOfTheSnake === -1){
+                    idOfBodyGraphic = "body_vertical";
+                } else if (yDirectionOfTheCurrentPartOfTheSnake === 1 && yDirectionOfTheNextPartOfTheSnake === 1){
+                    idOfBodyGraphic = "body_vertical";
+                } else if (xDirectionOfTheCurrentPartOfTheSnake === 1 && xDirectionOfTheNextPartOfTheSnake === 1){
+                    idOfBodyGraphic = "body_horizontal"
+                } else if (xDirectionOfTheCurrentPartOfTheSnake === -1 && xDirectionOfTheNextPartOfTheSnake === -1){
+                    idOfBodyGraphic = "body_horizontal"
+                } else if (yDirectionOfTheCurrentPartOfTheSnake === -1 && xDirectionOfTheNextPartOfTheSnake === 1){
+                    idOfBodyGraphic = "body_bottomright"
+                } else if (yDirectionOfTheCurrentPartOfTheSnake === -1 && xDirectionOfTheNextPartOfTheSnake === -1){
+                    idOfBodyGraphic = "body_bottomleft"
+                } else if (yDirectionOfTheCurrentPartOfTheSnake === 1 && xDirectionOfTheNextPartOfTheSnake === 1){
+                    idOfBodyGraphic = "body_topright"
+                } else if (yDirectionOfTheCurrentPartOfTheSnake === 1 && xDirectionOfTheNextPartOfTheSnake === -1){
+                    idOfBodyGraphic = "body_topleft"
+                } else if (xDirectionOfTheCurrentPartOfTheSnake === 1 && yDirectionOfTheNextPartOfTheSnake === 1 ){
+                    idOfBodyGraphic = "body_bottomleft"
+                } else if (xDirectionOfTheCurrentPartOfTheSnake === 1 && yDirectionOfTheNextPartOfTheSnake === -1){
+                    idOfBodyGraphic = "body_topleft"
+                } else if (xDirectionOfTheCurrentPartOfTheSnake === -1 && yDirectionOfTheNextPartOfTheSnake === 1){
+                    idOfBodyGraphic = "body_bottomright"
+                } else if (xDirectionOfTheCurrentPartOfTheSnake === -1 && yDirectionOfTheNextPartOfTheSnake === -1 ){
+                    idOfBodyGraphic = "body_topright"
+                }
+
+
+                ctx.drawImage(images.get(idOfBodyGraphic), xCoordinateOfTheCurrentPartOfTheSnake*sizeOfEachGridInPixels, yCoordinateOfTheCurrentPartOfTheSnake*sizeOfEachGridInPixels);
+            }
+        }
+
+        function drawSnake(){
+            drawHead();
+            drawBody();
+            drawTail();
+        }
+
+        function drawApple(){
+            ctx.drawImage(images.get("apple"), xCoordinateOfApple*sizeOfEachGridInPixels, yCoordinateOfApple*sizeOfEachGridInPixels);
+        }
+
+        function draw(){
+            drawGrid();
+            drawSnake();
+            drawApple();
+        }
+
+        function isOnSnake(coordinate_2){
+            for (const coordinate of coordinatesForEachPartOfTheSnake){
+                if(coordinate[0] ===coordinate_2[0] && coordinate[1] === coordinate_2[1]){
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function generateRandomCoordinatesForApple(){
+            do {
+                xCoordinateOfApple = Math.floor(Math.random() * numberOfColumns)
+                yCoordinateOfApple = Math.floor(Math.random() * numberOfRows)
+            } while (isOnSnake([xCoordinateOfApple, yCoordinateOfApple]))
+        } 
+        
+        function hasSnakeEatenTheApple(){
+            const [xCoordinateOfHead, yCoordinateOfHead] = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1];
+            return xCoordinateOfHead === xCoordinateOfApple && yCoordinateOfHead === yCoordinateOfApple;
+        }
+
+        function extendTheSnake(){
+
+            const directionOfTail = directionOfEachPartOfTheSnake[0]
+            const coordinateOfTail = coordinatesForEachPartOfTheSnake[0]
+
+            const [xCoordinateOfTail, yCoordinateOfTail] = coordinateOfTail
+            const [xDirectionOfTail, yDirectionOfTail] = directionOfTail;
+
+            let coordinateXOfTheNewTail = 0;
+            let coordinateYOfTheNewTail = 0;
+
+            if (xDirectionOfTail === -1 ){
+                 coordinateXOfTheNewTail = xCoordinateOfTail+1;
+                 coordinateYOfTheNewTail = yCoordinateOfTail;
+            } else if (xDirectionOfTail === 1){
+                coordinateXOfTheNewTail = xCoordinateOfTail - 1;
+                coordinateYOfTheNewTail = yCoordinateOfTail
+            } else if (yDirectionOfTail === -1){
+                coordinateXOfTheNewTail = xCoordinateOfTail
+                coordinateYOfTheNewTail = yCoordinateOfTail+ 1;
+            } else if (yDirectionOfTail === 1){
+                coordinateXOfTheNewTail = xCoordinateOfTail
+                coordinateYOfTheNewTail = yCoordinateOfTail - 1;
+            }
+
+            coordinatesForEachPartOfTheSnake.unshift([coordinateXOfTheNewTail, coordinateYOfTheNewTail])
+            directionOfEachPartOfTheSnake.unshift([xDirectionOfTail, yDirectionOfTail])
+
+        }
+
+        function handleKeys(event){
+            if (event.code === "Space"){
+                isGameLooping = false;
+                isGamePaused = true;
+                return;
+            }
+
+            const direction = key_code_to_direction_map.get(event.keyCode)
+            const opposite_direction = direction_to_opposite_direction_map.get(direction);
+            const last_user_input = user_input_queue[user_input_queue.length-1]
+
+            if (user_input_queue.length<4 && isGameLooping && last_user_input!==direction && last_user_input!==opposite_direction)
+                user_input_queue.push(key_code_to_direction_map.get(event.keyCode));
+        }
+
+        function handleSwipe(event){
+            const opposite_direction = direction_to_opposite_direction_map.get(event.detail.direction);
+            const last_user_input = user_input_queue[user_input_queue.length-1]
+
+            if (user_input_queue.length<4 && isGameLooping && last_user_input!==event.detail.direction && last_user_input!==opposite_direction){
+                user_input_queue.push(event.detail.direction);
+            }
+        }
+
+        function handleUserInput(){
+            if (user_input_queue.length === 0){
+                return;
+            }
+
+            const user_input = user_input_queue.shift();
+            const coordinateOfHead = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1];
+            const directionOfHead = directionOfEachPartOfTheSnake[directionOfEachPartOfTheSnake.length - 1]
+            const [directionOfHeadX, directionOfHeadY] = directionOfHead
+
+            if (user_input === "left" && Math.abs(directionOfHeadX) !== 1){
+                turns.set(coordinateOfHead[0]+','+coordinateOfHead[1], "left")
+            } else if (user_input === "up" && Math.abs(directionOfHeadY) !== 1){
+                turns.set(coordinateOfHead[0]+','+coordinateOfHead[1], "up")
+            } else if (user_input === "right" && Math.abs(directionOfHeadX) !== 1){
+                turns.set(coordinateOfHead[0]+','+coordinateOfHead[1], "right")
+            } else if (user_input === "down" && Math.abs(directionOfHeadY) !== 1){
+                turns.set(coordinateOfHead[0]+','+coordinateOfHead[1], "down")
+            }
+        }
+
+
+        function move(){
+            const indexOfHead = coordinatesForEachPartOfTheSnake.length - 1;
+
+            for (let i=coordinatesForEachPartOfTheSnake.length-1; i>=0; i-- ){
+                let coordinatesOfTheCurrentPartOfTheSnake = coordinatesForEachPartOfTheSnake[i];
+
+                const turnDirection = turns.get(coordinatesOfTheCurrentPartOfTheSnake[0]+','+coordinatesOfTheCurrentPartOfTheSnake[1])
+
+
+                if (turnDirection === "right"){
+                    directionOfEachPartOfTheSnake[i] = [1,0]
+                } else if (turnDirection === "left"){
+                    directionOfEachPartOfTheSnake[i] = [-1, 0]
+                } else if (turnDirection === "up"){
+                    directionOfEachPartOfTheSnake[i] = [0, -1]
+                } else if (turnDirection === "down"){
+                    directionOfEachPartOfTheSnake[i] = [0, 1]
+                }
+
+                if (i === 0){
+                    turns.delete(coordinatesOfTheCurrentPartOfTheSnake[0]+','+coordinatesOfTheCurrentPartOfTheSnake[1])
+                }
+
+
+                coordinatesForEachPartOfTheSnake[i] = [coordinatesForEachPartOfTheSnake[i][0]+directionOfEachPartOfTheSnake[i][0], coordinatesForEachPartOfTheSnake[i][1]+directionOfEachPartOfTheSnake[i][1]]
+                
+            }
+
+        }
+
+        function isGameOver(){
+            const coordinatesOfHead = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1];
+
+            const [xCoordinateOfHead, yCoordinateOfHead] = coordinatesOfHead
+
+            if (coordinatesForEachPartOfTheSnake.length>=numberOfRows*numberOfColumns){
+                return true;
+            }
+
+            //Check if the snake collided with the wall.
+            if (xCoordinateOfHead*sizeOfEachGridInPixels<0 || xCoordinateOfHead*sizeOfEachGridInPixels+sizeOfEachGridInPixels>canvas.width || yCoordinateOfHead*sizeOfEachGridInPixels<0 || yCoordinateOfHead*sizeOfEachGridInPixels+sizeOfEachGridInPixels>canvas.height){
+                return true;
+            }
+
+            //Check if the snake collided with itself.
+            for (let i=coordinatesForEachPartOfTheSnake.length-2; i>=0;i--){
+                const coordinates = coordinatesForEachPartOfTheSnake[i];
+                const [coordinateX, coordinateY] = coordinates;
+                if (coordinateX ===  xCoordinateOfHead && coordinateY === yCoordinateOfHead  ){
+                    return true;
+                }
+            }
+
+
+            return false;
+        }
+
+    
+
+        function* getNextCoordinates(){
+
+            const directionOfHead = directionOfEachPartOfTheSnake[directionOfEachPartOfTheSnake.length - 1];
+            const [directionOfHeadX, directionOfHeadY] = directionOfHead;
+
+            const coordinateOfHead = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1];
+            const [coordinateOfHeadX, coordinateOfHeadY] = coordinateOfHead;
+
+            if (directionOfHeadX === 1){
+                if (coordinateOfHeadX <= numberOfColumns - 2){
+                    yield [coordinateOfHeadX+1, coordinateOfHeadY];
+                } if (coordinateOfHeadY <= numberOfRows - 2){
+                    yield [coordinateOfHeadX, coordinateOfHeadY+1];
+                } 
+                if (coordinateOfHeadY>=1){
+                    yield [coordinateOfHeadX, coordinateOfHeadY - 1];
+                }
+            } else if (directionOfHeadX === -1){
+                if (coordinateOfHeadX >= 1){
+                    yield [coordinateOfHeadX - 1, coordinateOfHeadY];
+                } if (coordinateOfHeadY <= numberOfRows - 2){
+                    yield [coordinateOfHeadX, coordinateOfHeadY + 1];
+                } 
+                if (coordinateOfHeadY >= 1){
+                    yield [coordinateOfHeadX, coordinateOfHeadY - 1];
+                }
+            } else if (directionOfHeadY === 1){
+                if (coordinateOfHeadY <= numberOfRows - 2){
+                    yield [coordinateOfHeadX, coordinateOfHeadY + 1];
+                }
+                if (coordinateOfHeadX <= numberOfColumns - 2){
+                    yield [coordinateOfHeadX + 1, coordinateOfHeadY];
+                } 
+                if (coordinateOfHeadX >= 1){
+                    yield [coordinateOfHeadX - 1, coordinateOfHeadY];
+                } 
+            } else if (directionOfHeadY === -1){
+                if (coordinateOfHeadY >= 1){
+                    yield [coordinateOfHeadX, coordinateOfHeadY - 1]
+                }
+
+                if (coordinateOfHeadX >= 1){
+                    yield [coordinateOfHeadX - 1, coordinateOfHeadY];
+                } 
+                if (coordinateOfHeadX <= numberOfColumns - 2){
+                    yield [coordinateOfHeadX + 1, coordinateOfHeadY];
+                } 
+
+            }
+
+        }
+
+        function calculateTheDistanceBetweenTheHeadOfTheSnakeAndTheFood(){
+            const coordinate_of_head = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1];
+
+            return Math.abs(coordinate_of_head[1] - yCoordinateOfApple)+Math.abs(coordinate_of_head[0] - xCoordinateOfApple);
+
+        }
+
+
+        function isSameCoordinates(coordinate_1,coordinate_2){
+            if (coordinate_1 === undefined || coordinate_2 === undefined){
+                return false;
+            }
+
+
+            return coordinate_1[0] === coordinate_2[0] && coordinate_1[1] === coordinate_2[1]
+        }
+
+        function findPathFromHeadToTarget(path, target, hasSnakeEatenApple, visited_coordinates){
+
+            for (const coordinate of getNextCoordinates()){
+
+                if (isGameOver()){
+                    path.pop();
+                    return path;
+                } 
+
+                const old_coordinates = coordinatesForEachPartOfTheSnake.slice()
+                const old_turns = new Map(turns);
+                const old_directions = directionOfEachPartOfTheSnake.slice();
+                const old_has_snake_eaten_apple = hasSnakeEatenApple;
+
+                if (visited_coordinates.has(coordinate[0]+','+coordinate[1])){
+                    continue;
+                }
+
+                visited_coordinates.add(coordinate[0]+','+coordinate[1]);
+
+                path.push(coordinate);
+
+                const coordinate_of_head = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length-1];
+
+                const direction_x = coordinate[0] - coordinate_of_head[0]
+                const direction_y = coordinate[1] - coordinate_of_head[1]
+
+                if (direction_x === 1){
+                    turns.set(coordinate_of_head[0]+','+coordinate_of_head[1], 'right')
+                } else if (direction_x === -1){
+                    turns.set(coordinate_of_head[0]+','+coordinate_of_head[1], 'left')
+                } else if (direction_y === 1 ){
+                    turns.set(coordinate_of_head[0]+','+coordinate_of_head[1], 'down')
+                } else if (direction_y === -1){
+                    turns.set(coordinate_of_head[0]+','+coordinate_of_head[1], 'up')
+                }
+
+                move();
+
+                if (hasSnakeEatenTheApple()){
+                    extendTheSnake();
+                    hasSnakeEatenApple=true;
+                }
+
+                findPathFromHeadToTarget(path,target,hasSnakeEatenApple, visited_coordinates);
+
+                coordinatesForEachPartOfTheSnake = old_coordinates;
+                turns = old_turns;
+                directionOfEachPartOfTheSnake = old_directions;
+                hasSnakeEatenApple = old_has_snake_eaten_apple;
+
+                if (isSameCoordinates(path[path.length-1],target)){
+                    return path;
+                }
+
+                path.pop();
+            }
+
+            return path;
+        }
+
+        //The snake is considered to be trapped if there is no path from the head to its tail.
+        function isSnakeTrapped(hasSnakeEatenApple){
+            const target = structuredClone(coordinatesForEachPartOfTheSnake[0]);
+
+            const path = findPathFromHeadToTarget([], target, hasSnakeEatenApple, new Set());
+
+            return path.length===0;
+        }
+
+        /* AI*/
+        function getBestDirectionForTheSnake(){
+            let best_distance = Infinity;
+            let direction = ""
+            let best_direction = ""
+
+            for (const coordinate of getNextCoordinates()){
+                
+                const old_coordinates = coordinatesForEachPartOfTheSnake.slice();
+                const old_directions = directionOfEachPartOfTheSnake.slice();
+                const old_turns = new Map(turns);
+
+                
+                const coordinateOfHead = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1]
+
+                const directionOfHead = directionOfEachPartOfTheSnake[directionOfEachPartOfTheSnake.length - 1];
+                const [directionXOfHead, directionYOfHead] = directionOfHead;
+
+                const directionY = coordinate[1] - coordinateOfHead[1]
+                const directionX = coordinate[0] - coordinateOfHead[0]
+
+                if (directionY === 1 ){
+                    direction = "down"
+                } else if (directionX === 1){
+                    direction = "right"
+                } else if (directionY === -1){
+                    direction = "up"
+                } else if (directionX === -1){
+                    direction = "left"
+                }
+
+                turns.set(coordinateOfHead[0]+','+coordinateOfHead[1], direction)
+
+                move();
+
+
+                let hasSnakeEatenApple = false;
+                if (hasSnakeEatenTheApple()){
+                    hasSnakeEatenApple = true;
+                    extendTheSnake();
+                }
+                
+                const distance = calculateTheDistanceBetweenTheHeadOfTheSnakeAndTheFood()
+
+
+                if (distance<best_distance && !isGameOver() && !isSnakeTrapped(hasSnakeEatenApple)){
+                    best_distance = distance;
+                    best_direction = direction
+                }
+
+                coordinatesForEachPartOfTheSnake = old_coordinates;
+                directionOfEachPartOfTheSnake = old_directions;
+                turns = old_turns;
+
+            }
+
+            return best_direction;
+        }
+
+        function displayTheAppropriateUI(){
+            if (isGameLooping){
+                start_button.style.display="none"
+                pause_menu.style.display="none"
+                canvas.style.opacity = "1"
+            } else if(isGamePaused){
+                start_button.style.display="none"
+                pause_menu.style.display="block"
+                canvas.style.opacity = "0.3"
+            } else if(player==="AI"){
+                start_message.textContent= "AI will move the snake. To pause the game, click anywhere on the game window or press the space bar. To end the game, click on the 'End Game' button after pausing."
+                start_button.style.display="block"
+                pause_menu.style.display="none"
+                canvas.style.opacity = "0.3"
+            } else{
+                start_message.textContent = "Use arrow keys or swipe to move the snake. To pause the game,  click anywhere on the game window or press the space bar. To end the game, click on the 'End Game' button after pausing."
+                start_button.style.display="block"
+                pause_menu.style.display="none"
+                canvas.style.opacity = "0.3"
+            }
+        }
+
+        function main(){
+            displayTheAppropriateUI();
+            
+            if ((performance.now() - whenThePreviousFrameRendered) >= (1/speed)*1000){
+                whenThePreviousFrameRendered = performance.now();
+                if (isGameLooping){
+                    if (player === "AI"){
+                        const best_direction = getBestDirectionForTheSnake();
+                        const coordinate_of_head = coordinatesForEachPartOfTheSnake[coordinatesForEachPartOfTheSnake.length - 1]
+                        turns.set(coordinate_of_head[0]+','+coordinate_of_head[1], best_direction)
+                    } else {
+                        handleUserInput();
+                    }
+                    move();
+                } 
+                 
+                if (isGameOver()){
+                    start_button.style.display="none"
+                    pause_menu.style.display="none"
+                    canvas.style.transform = "translateY(0px)";
+                    isGameLooping = false;
+                    const gameOverTextContainer = document.querySelector(".game-over-text-container")
+                    gameOverTextContainer.style.display = "block"
+                    canvas.style.opacity = "0.3"
+                    window.cancelAnimationFrame(requestAnimationFrameID);
+                    return;
+                }
+
+
+                if (mode === "with earthquakes" && isEarthquakeOccuring && isGameLooping){
+                    if (numberOfShakesOccured < maximumNumberOfShakesInAnEarthquake){
+                        if (numberOfShakesOccured % 2 === 0){
+                            canvas.style.transform= "translateY(25px)";
+                        } else {
+                            canvas.style.transform = "translateY(0px)";
+                        }
+                        numberOfShakesOccured += 1;
+                    } else {
+                        numberOfShakesOccured = 0;
+                        isEarthquakeOccuring = false;
+                        timeoutIDForEarthquake = null;
+                    }
+                }
+
+                if (mode === "with earthquakes" && !isEarthquakeOccuring && timeoutIDForEarthquake === null && isGameLooping){
+                    // Trigger an earthquake every 5 to 10 seconds.
+                    timeoutIDForEarthquake= window.setTimeout(()=>{
+                        isEarthquakeOccuring = true;
+                    }, Math.random()*5000+10000)
+                }
+
+                draw();
+                
+
+                if (hasSnakeEatenTheApple()){
+                    extendTheSnake();
+                    if (coordinatesForEachPartOfTheSnake.length<(numberOfColumns*numberOfRows))
+                        generateRandomCoordinatesForApple();
+
+                    const scoreElement = document.querySelector(".score")
+                    const score = coordinatesForEachPartOfTheSnake.length - minimumNumberOfSnakeParts
+                    scoreElement.textContent = score;
+
+                }
+
+            }
+
+            requestAnimationFrameID = window.requestAnimationFrame(main);
+        }
+
+        window.onload = init
+
+
+    </script>
+
+    <canvas onclick="isGameLooping=false;isGamePaused = true;">
+
+    </canvas>
+
+    <div class="game-over-text-container">
+        <div>
+            <div>Game Over</div>
+            <button  onclick="init();">Play again</button>
+        </div>
+    </div>
+
+    <div class="two-column-grid">
+        <div>Score</div>
+        <div class="score">0</div>
+
+        <div style="margin-right:1rem;">Speed</div>
+        <div class="counter">
+            <button class='counter-down' onclick="speed=Math.max(speed-speed_step,speed_step);document.querySelector('.count').textContent=Math.floor(speed/speed_step);">-</button>
+            <div class="count">0</div>
+            <button class="counter-up" onclick="speed=Math.min(speed+speed_step,60);document.querySelector('.count').textContent=Math.floor(speed/speed_step);">+</button>
+        </div>
+    
+
+    </div>
+
+    <button class="install-button">Install app</button>
+
+    <div class="start-button">
+        <div>
+            <div class="start-message">
+                
+            </div>
+            <div class="options" style="margin-top:1rem;">
+                <label  for="variant" style="margin-right:1rem;">Variant</label>
+                <select autocomplete="off" style="margin-bottom:1rem;" name="variant" id="variant" onchange = "mode = event.target.value;">
+                    <option value="classic">Classic</option>
+                    <option value="with earthquakes">With earthquakes</option>
+                </select>
+
+                <label  for="player" style="margin-right:1rem;">Player</label>
+                <select autocomplete="off" style="margin-bottom:1rem;" name="player" id="player" onchange ="player = event.target.value;">
+                    <option value="human">Human</option>
+                    <option value="AI">AI</option>
+                </select>
+
+            </div>
+            <button onclick="isGameLooping = true;">Click to start</button>
+        </div>
+    </div>
+
+    <div class="pause-menu">
+        <div>
+            <div>
+                Game is paused.
+            </div>
+
+            <button onclick="isGameLooping = true; isGamePaused = false;">Continue</button>
+            <button onclick="init();">End game</button>
+        </div>
+    </div>
+
+    <img src="./assets/Graphics/tail_up.webp" id="tail_up">
+    <img src="./assets/Graphics/tail_down.webp" id="tail_down">
+    <img src="./assets/Graphics/tail_right.webp" id="tail_right">
+    <img src="./assets/Graphics/tail_left.webp" id="tail_left">
+
+    <img src="./assets/Graphics/body_bottomleft.webp" id="body_bottomleft">
+    <img src="./assets/Graphics/body_bottomright.webp" id="body_bottomright">
+    <img src="./assets/Graphics/body_horizontal.webp" id="body_horizontal">
+    <img src="./assets/Graphics/body_topleft.webp" id="body_topleft">
+    <img src="./assets/Graphics/body_topright.webp" id="body_topright">
+    <img src="./assets/Graphics/body_vertical.webp" id="body_vertical">
+
+    <img src="./assets/Graphics/head_left.webp" id="head_left">
+    <img src="./assets/Graphics/head_right.webp" id="head_right">
+    <img src="./assets/Graphics/head_up.webp" id="head_up">
+    <img src="./assets/Graphics/head_down.webp" id="head_down">
+
+    <img src="./assets/Graphics/apple.webp" id="apple">
+    
+</body>
+</html>
